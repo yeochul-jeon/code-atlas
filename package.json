@@ -1,0 +1,39 @@
+{
+  "name": "codeatlas",
+  "version": "0.1.0",
+  "description": "Persistent code index and MCP server for Java/Kotlin projects",
+  "type": "module",
+  "main": "dist/cli/index.js",
+  "bin": {
+    "codeatlas": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "dev": "node --loader ts-node/esm src/cli/index.ts",
+    "start": "node dist/cli/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.37.0",
+    "@modelcontextprotocol/sdk": "^1.10.2",
+    "better-sqlite3": "^11.9.1",
+    "commander": "^13.1.0",
+    "tree-sitter": "^0.21.1",
+    "tree-sitter-java": "^0.23.5",
+    "tree-sitter-kotlin": "^0.3.8",
+    "yaml": "^2.7.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.14.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.4"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true,
+    "serena@claude-plugins-official": false,
+    "jdtls-lsp@claude-plugins-official": false,
+    "kotlin-lsp@claude-plugins-official": false
+  }
+}
