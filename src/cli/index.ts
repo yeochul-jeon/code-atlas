@@ -11,6 +11,7 @@ import {
   searchSymbolsFts,
   deleteProject,
 } from '../storage/queries.js';
+import { deadCodeAction } from './dead-code.js';
 
 const DB_PATH = join(homedir(), '.codeatlas', 'index.db');
 
@@ -163,6 +164,22 @@ program
     console.log(`  files   : ${result.filesEmbedded}`);
     console.log(`  symbols : ${result.symbolsEmbedded}`);
     console.log(`\nRestart the MCP server to make semantic_search available.`);
+  });
+
+// ─── dead-code ────────────────────────────────────────────────────────────────
+
+program
+  .command('dead-code [project]')
+  .description('Find potentially dead (unreferenced) symbols')
+  .option('-k, --kind <kind>', 'Filter by kind: class|interface|enum|method|field')
+  .action((project: string | undefined, opts: { kind?: string }) => {
+    const db = getDb();
+    const result = deadCodeAction(db, project, opts.kind);
+    if (result.exitCode !== 0) {
+      console.error(result.output);
+      process.exit(result.exitCode);
+    }
+    console.log(result.output);
   });
 
 program.parse();
