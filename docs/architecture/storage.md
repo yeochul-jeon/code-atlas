@@ -15,18 +15,64 @@ CodeAtlas는 두 가지 저장소를 사용합니다:
 
 ### 테이블 구조
 
-```
-projects
-  │
-  └── files (project_id FK)
-        │
-        ├── symbols (file_id FK, parent_id self-ref FK)
-        │     │
-        │     └── refs (source_symbol_id FK, target_symbol_id FK)
-        │
-        ├── dependencies (source_file_id FK)
-        │
-        └── summaries (file_id FK, symbol_id FK)
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#3b82f6', 'primaryTextColor': '#f8fafc', 'primaryBorderColor': '#60a5fa', 'lineColor': '#94a3b8', 'secondaryColor': '#1e293b', 'tertiaryColor': '#0f172a'}}}%%
+erDiagram
+    projects {
+        int id PK
+        text name
+        text root_path
+        text last_indexed_at
+    }
+    files {
+        int id PK
+        int project_id FK
+        text relative_path
+        text content_hash
+        text last_indexed_at
+    }
+    symbols {
+        int id PK
+        int file_id FK
+        int parent_id FK
+        text name
+        text kind
+        text signature
+        int start_line
+        int end_line
+        text modifiers
+        text annotations
+    }
+    refs {
+        int id PK
+        int source_symbol_id FK
+        int target_symbol_id FK
+        text kind
+        text callee_name
+    }
+    dependencies {
+        int id PK
+        int source_file_id FK
+        text target_fqn
+        text kind
+    }
+    summaries {
+        int id PK
+        int file_id FK
+        int symbol_id FK
+        text content
+        text model_version
+        text generated_at
+    }
+
+    projects ||--o{ files : "has"
+    files ||--o{ symbols : "contains"
+    files ||--o{ dependencies : "imports"
+    files ||--o{ summaries : "summarized by"
+    symbols ||--o{ symbols : "parent_id (self-ref)"
+    symbols ||--o{ refs : "calls (source)"
+    symbols ||--o{ refs : "called by (target)"
+    symbols ||--o{ summaries : "summarized by"
 ```
 
 ---
@@ -211,12 +257,23 @@ idx_summaries_symbol ON summaries(symbol_id)
 
 `src/storage/queries.ts`의 `searchSymbolsFts()` 함수:
 
-```
-1. FTS5 prefix 매칭: "UserServ*" 형태로 빠른 전문 검색
-   → 결과 있으면 반환
-   
-2. LIKE substring fallback: "%getUserById%" 형태로 camelCase 검색
-   → FTS5 결과가 없을 때 사용
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#3b82f6', 'primaryTextColor': '#f8fafc', 'primaryBorderColor': '#60a5fa', 'lineColor': '#94a3b8', 'secondaryColor': '#1e293b', 'tertiaryColor': '#0f172a'}}}%%
+flowchart TD
+    Q(["🔍 검색 쿼리 입력"]):::cli
+    F["FTS5 prefix 검색\n예: UserServ*"]:::engine
+    D{"결과 있음?"}:::decision
+    R1(["✅ 결과 반환"]):::cli
+    L["LIKE substring fallback\n예: %getUserById%"]:::engine
+    R2(["✅ 결과 반환"]):::cli
+
+    Q --> F --> D
+    D -- "Yes" --> R1
+    D -- "No (camelCase 등)" --> L --> R2
+
+    classDef cli fill:#3b82f6,stroke:#60a5fa,color:#f8fafc
+    classDef engine fill:#8b5cf6,stroke:#a78bfa,color:#f8fafc
+    classDef decision fill:#f43f5e,stroke:#fb7185,color:#f8fafc
 ```
 
 ---
@@ -225,14 +282,34 @@ idx_summaries_symbol ON summaries(symbol_id)
 
 인덱싱 완료 후 실행되는 2단계 참조 해석:
 
-```
-Phase 1 (per-file): indexFile() 중
-  동일 파일 내 메서드 호출 → callee_name을 당일 추출된 심볼명과 매칭
-  target_symbol_id 즉시 설정
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#3b82f6', 'primaryTextColor': '#f8fafc', 'primaryBorderColor': '#60a5fa', 'lineColor': '#94a3b8', 'secondaryColor': '#1e293b', 'tertiaryColor': '#0f172a'}}}%%
+flowchart TD
+    subgraph P1["Phase 1 — per-file (indexFile() 중)"]
+        A["메서드 호출 감지\ncallee_name 추출"]:::engine
+        B{"동일 파일 내\n심볼 존재?"}:::decision
+        C["target_symbol_id 즉시 설정"]:::storage
+        D["callee_name만 저장\n(target_symbol_id = NULL)"]:::engine
+    end
 
-Phase 2 (project-wide): resolveProjectRefs()
-  target_symbol_id가 NULL인 refs의 callee_name을
-  프로젝트 전체 심볼명과 매칭 → target_symbol_id 업데이트
+    subgraph P2["Phase 2 — project-wide (resolveProjectRefs())"]
+        E["target_symbol_id가 NULL인\nrefs 조회"]:::storage
+        F{"프로젝트 전체에서\n심볼명 매칭?"}:::decision
+        G["target_symbol_id 업데이트"]:::storage
+        H(["미해석 참조 유지"])
+    end
+
+    A --> B
+    B -- "Yes" --> C
+    B -- "No" --> D
+    D --> E
+    E --> F
+    F -- "Yes" --> G
+    F -- "No" --> H
+
+    classDef engine fill:#8b5cf6,stroke:#a78bfa,color:#f8fafc
+    classDef storage fill:#10b981,stroke:#34d399,color:#f8fafc
+    classDef decision fill:#f43f5e,stroke:#fb7185,color:#f8fafc
 ```
 
 > 단순 이름 매칭 (FQN 미지원). 동명 심볼이 여러 개면 첫 번째 매칭 사용.

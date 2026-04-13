@@ -20,6 +20,33 @@ your-project/
 `codeatlas index <path>` 또는 `codeatlas dead-code` 실행 시 프로젝트 루트에서 자동으로 로드됩니다.  
 파일이 없으면 모든 기본값을 사용합니다.
 
+설정 파일이 로드되어 기본값과 병합되는 과정입니다:
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#3b82f6', 'primaryTextColor': '#f8fafc', 'primaryBorderColor': '#60a5fa', 'lineColor': '#94a3b8', 'secondaryColor': '#1e293b', 'tertiaryColor': '#0f172a'}}}%%
+flowchart TD
+    A(["codeatlas index / dead-code 실행"]):::cli
+    B{"프로젝트 루트에\n.codeatlas.yaml 존재?"}:::decision
+    C["YAML 파싱"]:::engine
+    D{"YAML 문법\n유효?"}:::decision
+    E["⚠️ stderr 경고 출력"]:::api
+    F["섹션별 기본값과 병합\nindexer / dead_code / summaries"]:::engine
+    G(["최종 설정으로 실행"]):::cli
+    DEFAULTS[("기본값 사용\nDEFAULT_EXTENSIONS\nDEFAULT_SKIP_DIRS\nDEFAULT_MODEL\n...")]:::storage
+
+    A --> B
+    B -- "Yes" --> C --> D
+    D -- "Yes" --> F --> G
+    D -- "No" --> E --> DEFAULTS --> G
+    B -- "No" --> DEFAULTS
+
+    classDef cli fill:#3b82f6,stroke:#60a5fa,color:#f8fafc
+    classDef engine fill:#8b5cf6,stroke:#a78bfa,color:#f8fafc
+    classDef storage fill:#10b981,stroke:#34d399,color:#f8fafc
+    classDef decision fill:#f43f5e,stroke:#fb7185,color:#f8fafc
+    classDef api fill:#f59e0b,stroke:#fbbf24,color:#0f172a
+```
+
 ---
 
 ## 전체 스키마
@@ -98,6 +125,28 @@ summaries:
 | `.kt` | ✓ | - (계획 중) |
 | `.js`, `.ts`, `.vue` | ✓ | - (계획 중) |
 | `.xml` | ✓ | - (파서 없음) |
+
+확장자별 처리 흐름을 시각화하면 다음과 같습니다:
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#3b82f6', 'primaryTextColor': '#f8fafc', 'primaryBorderColor': '#60a5fa', 'lineColor': '#94a3b8', 'secondaryColor': '#1e293b', 'tertiaryColor': '#0f172a'}}}%%
+flowchart LR
+    FILE(["파일 발견\n(extensions 목록 매칭)"]):::cli
+    COLLECT["파일 레코드 생성\n(files 테이블 upsert)"]:::storage
+    DETECT{"detectLanguage()\n파서 있음?"}:::decision
+    PARSE["파싱 + 심볼 추출\n(symbols, deps, refs 저장)"]:::engine
+    SKIP(["파일 레코드만 저장\n심볼 없음"]):::mcp
+
+    FILE --> COLLECT --> DETECT
+    DETECT -- ".java ✓" --> PARSE
+    DETECT -- ".kt / .ts / .xml ✗" --> SKIP
+
+    classDef cli fill:#3b82f6,stroke:#60a5fa,color:#f8fafc
+    classDef engine fill:#8b5cf6,stroke:#a78bfa,color:#f8fafc
+    classDef storage fill:#10b981,stroke:#34d399,color:#f8fafc
+    classDef mcp fill:#06b6d4,stroke:#22d3ee,color:#f8fafc
+    classDef decision fill:#f43f5e,stroke:#fb7185,color:#f8fafc
+```
 
 ```yaml
 # Java + 프론트엔드 파일 수집 (심볼 추출은 Java만)

@@ -184,6 +184,37 @@ codeatlas dead-code my-app --kind class
 - 아키텍처 어노테이션: `@WebAdapter`, `@UseCase`, `@PersistenceAdapter`, `@ApiAdapter`
 - 심볼 종류: `main()` 메서드, `public static final` 상수, 생성자, 열거형, 어노테이션 타입
 
+심볼이 데드 코드로 판단되는 결정 흐름입니다:
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#3b82f6', 'primaryTextColor': '#f8fafc', 'primaryBorderColor': '#60a5fa', 'lineColor': '#94a3b8', 'secondaryColor': '#1e293b', 'tertiaryColor': '#0f172a'}}}%%
+flowchart TD
+    A(["심볼 분석"]):::cli
+    B{"refs 테이블에\n참조 있음?"}:::decision
+    LIVE1(["✅ 살아있는 코드"])
+    C{"어노테이션\n제외 목록에 포함?\n(@Service, @Bean 등)"}:::decision
+    LIVE2(["✅ 살아있는 코드"])
+    D{"exclude_patterns\nglob 매칭?"}:::decision
+    LIVE3(["✅ 살아있는 코드"])
+    E{"특수 규칙 해당?\nmain() / 상수 / 생성자 / enum"}:::decision
+    LIVE4(["✅ 살아있는 코드"])
+    DEAD(["💀 데드 코드 보고"]):::api
+
+    A --> B
+    B -- "Yes" --> LIVE1
+    B -- "No" --> C
+    C -- "Yes" --> LIVE2
+    C -- "No" --> D
+    D -- "Yes" --> LIVE3
+    D -- "No" --> E
+    E -- "Yes" --> LIVE4
+    E -- "No" --> DEAD
+
+    classDef cli fill:#3b82f6,stroke:#60a5fa,color:#f8fafc
+    classDef decision fill:#f43f5e,stroke:#fb7185,color:#f8fafc
+    classDef api fill:#f59e0b,stroke:#fbbf24,color:#0f172a
+```
+
 ### 설정 파일로 제외 규칙 추가
 
 ```yaml
@@ -243,6 +274,32 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ### 임베딩 생성
 
 시맨틱 검색은 사전에 임베딩 벡터를 생성해야 합니다.
+
+`codeatlas embed` 명령의 처리 흐름입니다:
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#3b82f6', 'primaryTextColor': '#f8fafc', 'primaryBorderColor': '#60a5fa', 'lineColor': '#94a3b8', 'secondaryColor': '#1e293b', 'tertiaryColor': '#0f172a'}}}%%
+flowchart TD
+    A(["codeatlas embed my-app"]):::cli
+    B{"Xenova 모델\n캐시 존재?"}:::decision
+    C["📥 all-MiniLM-L6-v2 다운로드\n(~23MB, 최초 1회)"]:::api
+    D["SQLite에서\n파일·심볼 목록 조회"]:::storage
+    E["텍스트 구성\n(경로 + 심볼명 + 요약)"]:::engine
+    F["로컬 임베딩 생성\n384차원 Float32 벡터"]:::engine
+    G[("LanceDB upsert\n~/.codeatlas/vectors/")]:::storage
+    H(["✅ semantic_search 사용 가능"]):::cli
+
+    A --> B
+    B -- "No" --> C --> D
+    B -- "Yes" --> D
+    D --> E --> F --> G --> H
+
+    classDef cli fill:#3b82f6,stroke:#60a5fa,color:#f8fafc
+    classDef engine fill:#8b5cf6,stroke:#a78bfa,color:#f8fafc
+    classDef storage fill:#10b981,stroke:#34d399,color:#f8fafc
+    classDef decision fill:#f43f5e,stroke:#fb7185,color:#f8fafc
+    classDef api fill:#f59e0b,stroke:#fbbf24,color:#0f172a
+```
 
 ```bash
 codeatlas embed my-app
@@ -439,6 +496,39 @@ codeatlas index /projects/my-service --name my-service --verbose
 
 # 3. 임베딩 생성 (시맨틱 검색 필요 시)
 codeatlas embed my-service
+```
+
+신규 프로젝트 온보딩의 전체 흐름입니다:
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#3b82f6', 'primaryTextColor': '#f8fafc', 'primaryBorderColor': '#60a5fa', 'lineColor': '#94a3b8', 'secondaryColor': '#1e293b', 'tertiaryColor': '#0f172a'}}}%%
+sequenceDiagram
+    participant U as 👤 개발자
+    participant CLI as 🖥️ codeatlas CLI
+    participant DB as 💾 SQLite
+    participant C as 🤖 Claude Code
+    participant V as 🔍 LanceDB
+
+    U->>CLI: codeatlas index /path/to/project
+    CLI->>CLI: 파일 수집 + tree-sitter 파싱
+    CLI->>DB: 심볼 · 의존성 · 참조 저장
+    CLI-->>U: 인덱싱 완료 (X 파일, Y 심볼)
+
+    U->>C: Claude Code 실행 (MCP 연동)
+    C->>DB: list_projects — 프로젝트 목록 확인
+    C->>DB: get_package_tree — 패키지 구조 파악
+    C->>DB: search_symbols — 핵심 클래스 탐색
+    DB-->>C: 코드 구조 정보
+    C-->>U: 아키텍처 설명 및 탐색
+
+    opt 시맨틱 검색 필요 시
+        U->>CLI: codeatlas embed my-service
+        CLI->>V: 벡터 임베딩 저장
+        CLI-->>U: 임베딩 완료
+        U->>C: semantic_search로 의미 기반 탐색
+        C->>V: 벡터 유사도 검색
+        V-->>C: 관련 파일·심볼
+    end
 ```
 
 ### 코드 리뷰 지원

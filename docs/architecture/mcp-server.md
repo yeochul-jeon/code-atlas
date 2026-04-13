@@ -34,6 +34,43 @@ server.tool('search_symbols', ...);
 await server.connect(new StdioServerTransport());
 ```
 
+MCP 서버의 요청 수명주기를 시퀀스로 표현하면 다음과 같습니다:
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#3b82f6', 'primaryTextColor': '#f8fafc', 'primaryBorderColor': '#60a5fa', 'lineColor': '#94a3b8', 'secondaryColor': '#1e293b', 'tertiaryColor': '#0f172a'}}}%%
+sequenceDiagram
+    participant C as 🤖 Claude Code
+    participant T as StdioTransport
+    participant S as McpServer
+    participant H as Tool Handler
+    participant DB as 💾 SQLite
+    participant AI as ✨ AI / 벡터
+
+    C->>T: JSON-RPC 요청 (stdin)
+    T->>S: 메시지 파싱 + 디스패치
+    S->>H: 해당 도구 핸들러 호출
+
+    alt 일반 탐색 도구
+        H->>DB: 쿼리 (symbols, refs, files...)
+        DB-->>H: 결과 반환
+    else get_file_summary (AI 요약)
+        H->>DB: 캐시 확인
+        opt 캐시 MISS → Lazy 초기화
+            H->>AI: Anthropic API 호출
+            AI-->>H: 요약 텍스트
+            H->>DB: 캐시 저장
+        end
+    else semantic_search (벡터 검색)
+        H->>H: Embedder 로컬 실행 (Lazy 초기화)
+        H->>AI: LanceDB 벡터 검색
+        AI-->>H: 유사 결과
+    end
+
+    H-->>S: 포맷된 결과
+    S-->>T: JSON-RPC 응답
+    T-->>C: 결과 (stdout)
+```
+
 ---
 
 ## 탐색 도구 (13개)
@@ -228,17 +265,26 @@ Anthropic API를 통해 파일 요약을 생성하고 DB에 캐시합니다.
 
 모든 편집 도구는 **3단계 안전 프로토콜**을 적용합니다:
 
-```
-1. Pre-write 검증
-   tree-sitter로 파일을 재파싱하여 심볼 위치가 DB 기록과 일치하는지 확인
-   불일치 시 VerifyResult.ok = false 반환 → 편집 취소
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#3b82f6', 'primaryTextColor': '#f8fafc', 'primaryBorderColor': '#60a5fa', 'lineColor': '#94a3b8', 'secondaryColor': '#1e293b', 'tertiaryColor': '#0f172a'}}}%%
+flowchart TD
+    A(["✏️ 편집 도구 호출"]):::mcp
+    B["① Pre-write 검증\ntree-sitter 재파싱 → DB 위치와 비교\n(허용 오차 ±2줄)"]:::engine
+    C{"VerifyResult.ok?"}:::decision
+    D(["❌ 편집 취소\n오류 반환"])
+    E["② 원자적 쓰기\n새 내용 → file.tmp\nrename() → 교체"]:::engine
+    F["③ Post-write 재인덱싱\nreindexFile() 호출"]:::engine
+    G[("DB 동기화 완료\n(symbols, refs 갱신)")]:::storage
+    H(["✅ 성공 응답"]):::mcp
 
-2. 원자적 쓰기
-   새 내용을 <file>.tmp에 쓴 후 rename()으로 교체
-   프로세스 충돌 시에도 기존 파일 보존
+    A --> B --> C
+    C -- "false" --> D
+    C -- "true" --> E --> F --> G --> H
 
-3. Post-write 재인덱싱
-   reindexFile()을 호출하여 DB를 새 파일 내용과 동기화
+    classDef mcp fill:#06b6d4,stroke:#22d3ee,color:#f8fafc
+    classDef engine fill:#8b5cf6,stroke:#a78bfa,color:#f8fafc
+    classDef storage fill:#10b981,stroke:#34d399,color:#f8fafc
+    classDef decision fill:#f43f5e,stroke:#fb7185,color:#f8fafc
 ```
 
 ---
@@ -340,6 +386,55 @@ if (!vectorStore) {
 ```
 
 이를 통해 API 키나 벡터 DB 없이도 탐색 도구를 사용할 수 있습니다.
+
+---
+
+## 도구 분류 개요
+
+17개 도구를 역할별로 분류하면 다음과 같습니다:
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#3b82f6', 'primaryTextColor': '#f8fafc', 'primaryBorderColor': '#60a5fa', 'lineColor': '#94a3b8', 'secondaryColor': '#1e293b', 'tertiaryColor': '#0f172a'}}}%%
+flowchart LR
+    MCP(["🔌 MCP Server\n17개 도구"]):::mcp
+
+    subgraph NAV["🔍 코드 탐색 (8개)"]
+        N1["list_projects"]:::cli
+        N2["search_symbols"]:::cli
+        N3["get_file_overview"]:::cli
+        N4["get_symbol_detail"]:::cli
+        N5["get_symbol_references"]:::cli
+        N6["read_symbol_body"]:::cli
+        N7["read_file_range"]:::cli
+        N8["get_package_tree"]:::cli
+    end
+
+    subgraph ANAL["📊 분석 (3개)"]
+        A1["find_dead_code"]:::engine
+        A2["find_implementors"]:::engine
+        A3["get_dependencies"]:::engine
+    end
+
+    subgraph AI["✨ AI / 벡터 (2개)"]
+        AI1["get_file_summary\n(Anthropic API)"]:::api
+        AI2["semantic_search\n(LanceDB)"]:::storage
+    end
+
+    subgraph EDIT["✏️ 편집 (4개)"]
+        E1["replace_symbol_body"]:::mcp
+        E2["insert_after_symbol"]:::mcp
+        E3["insert_before_symbol"]:::mcp
+        E4["rename_symbol"]:::mcp
+    end
+
+    MCP --> NAV & ANAL & AI & EDIT
+
+    classDef mcp fill:#06b6d4,stroke:#22d3ee,color:#f8fafc
+    classDef cli fill:#3b82f6,stroke:#60a5fa,color:#f8fafc
+    classDef engine fill:#8b5cf6,stroke:#a78bfa,color:#f8fafc
+    classDef storage fill:#10b981,stroke:#34d399,color:#f8fafc
+    classDef api fill:#f59e0b,stroke:#fbbf24,color:#0f172a
+```
 
 ---
 

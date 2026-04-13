@@ -11,35 +11,41 @@ CodeAtlas의 인덱싱 엔진은 tree-sitter를 사용하여 소스 파일을 AS
 
 ## 인덱싱 파이프라인
 
-```
-indexProject(db, projectPath, name, options)
-         │
-         ├─ 1. upsertProject() → projects 테이블에 등록
-         │
-         ├─ 2. collectFiles(dir, extensions, skipDirs)
-         │       └─ 파일 목록 수집 (필터 적용)
-         │
-         ├─ 3. For each file (db.transaction으로 묶음):
-         │       │
-         │       ├─ readFileSync()
-         │       ├─ sha256(source)
-         │       ├─ [incremental] getFile() → hash 비교 → 동일 시 SKIP
-         │       │
-         │       └─ indexFile(db, projectId, absPath, relPath)
-         │               │
-         │               ├─ upsertFile()        ← files 테이블
-         │               ├─ deleteFileData()    ← 기존 심볼/의존성 삭제
-         │               ├─ detectLanguage()    ← 확장자 → 언어 매핑
-         │               ├─ parseFile()         ← tree-sitter AST 생성
-         │               ├─ extractFromJava()   ← 심볼/의존성/참조 추출
-         │               ├─ insertSymbol()      ← symbols 테이블 (계층 포함)
-         │               ├─ insertDependency()  ← dependencies 테이블
-         │               └─ insertRef()         ← refs 테이블
-         │
-         ├─ 4. touchProjectIndexed()
-         │
-         └─ 5. resolveProjectRefs()
-                 └─ callee_name → target_symbol_id 해석
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#3b82f6', 'primaryTextColor': '#f8fafc', 'primaryBorderColor': '#60a5fa', 'lineColor': '#94a3b8', 'secondaryColor': '#1e293b', 'tertiaryColor': '#0f172a'}}}%%
+flowchart TD
+    START(["📁 indexProject()"]):::cli
+    S1["① upsertProject()\nprojects 테이블에 등록"]:::storage
+    S2["② collectFiles()\n확장자 필터 + 디렉토리 제외"]:::engine
+    HASH["readFileSync() + sha256"]:::engine
+    SKIP_CHECK{"해시 동일?\n(--incremental)"}:::decision
+    SKIP(["⏭️ SKIP"])
+    
+    subgraph INDEXFILE["③ indexFile() — 파일별 루프"]
+        IF1["upsertFile()\n파일 레코드 upsert"]:::storage
+        IF2["deleteFileData()\n기존 심볼·의존성 삭제"]:::storage
+        IF3["detectLanguage()\n확장자 → 언어 매핑"]:::engine
+        IF4["parseFile()\ntree-sitter → AST"]:::engine
+        IF5["extractFromJava()\n심볼 · 의존성 · 참조 추출"]:::engine
+        IF6["insertSymbol()\n계층 구조 포함"]:::storage
+        IF7["insertDependency()"]:::storage
+        IF8["insertRef()"]:::storage
+        IF1 --> IF2 --> IF3 --> IF4 --> IF5 --> IF6 --> IF7 --> IF8
+    end
+
+    S4["④ touchProjectIndexed()\n인덱싱 시각 기록"]:::storage
+    S5["⑤ resolveProjectRefs()\ncallee_name → target_symbol_id"]:::engine
+    END(["✅ 완료"]):::cli
+
+    START --> S1 --> S2 --> HASH --> SKIP_CHECK
+    SKIP_CHECK -- "Yes" --> SKIP
+    SKIP_CHECK -- "No" --> INDEXFILE
+    INDEXFILE --> S4 --> S5 --> END
+
+    classDef cli fill:#3b82f6,stroke:#60a5fa,color:#f8fafc
+    classDef engine fill:#8b5cf6,stroke:#a78bfa,color:#f8fafc
+    classDef storage fill:#10b981,stroke:#34d399,color:#f8fafc
+    classDef decision fill:#f43f5e,stroke:#fb7185,color:#f8fafc
 ```
 
 ---
@@ -182,15 +188,26 @@ for (const sym of symbols) {
 
 파일 내용의 SHA-256 해시를 비교하여 변경 여부를 판단합니다.
 
-```
-For each file:
-  current_hash = sha256(readFileSync(filePath))
-  stored = getFile(db, projectId, relPath)
-  
-  if stored && stored.content_hash === current_hash:
-    SKIP (변경 없음)
-  else:
-    indexFile() 실행
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#3b82f6', 'primaryTextColor': '#f8fafc', 'primaryBorderColor': '#60a5fa', 'lineColor': '#94a3b8', 'secondaryColor': '#1e293b', 'tertiaryColor': '#0f172a'}}}%%
+flowchart TD
+    A["각 파일에 대해"]:::engine
+    B["current_hash = sha256(readFileSync)"]:::engine
+    C["stored = getFile(db, relPath)"]:::storage
+    D{"stored 존재 AND\nhash 일치?"}:::decision
+    E(["⏭️ SKIP\n(변경 없음)"])
+    F["indexFile() 실행\n(심볼 재추출 + DB 업데이트)"]:::engine
+    G["⚠️ resolveProjectRefs()는\n증분 모드에서도 항상 실행"]:::api
+
+    A --> B --> C --> D
+    D -- "Yes" --> E
+    D -- "No" --> F
+    F --> G
+
+    classDef engine fill:#8b5cf6,stroke:#a78bfa,color:#f8fafc
+    classDef storage fill:#10b981,stroke:#34d399,color:#f8fafc
+    classDef decision fill:#f43f5e,stroke:#fb7185,color:#f8fafc
+    classDef api fill:#f59e0b,stroke:#fbbf24,color:#0f172a
 ```
 
 **주의**: `resolveProjectRefs()`는 증분 인덱싱에서도 항상 실행됩니다.  
@@ -229,6 +246,24 @@ export function reindexFile(db: Db, projectId: number, filePath: string): void {
 
 write-tools의 3단계 프로토콜의 마지막 단계:  
 편집 → 원자적 쓰기 → **재인덱싱** → DB 동기화 완료
+
+편집 후 재인덱싱의 전체 흐름입니다:
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#3b82f6', 'primaryTextColor': '#f8fafc', 'primaryBorderColor': '#60a5fa', 'lineColor': '#94a3b8', 'secondaryColor': '#1e293b', 'tertiaryColor': '#0f172a'}}}%%
+flowchart LR
+    A(["✏️ MCP 편집 도구 호출"]):::mcp
+    B["atomicWriteFile()\n.tmp 파일 작성 → rename()"]:::engine
+    C["reindexFile()\n편집된 파일 재파싱"]:::engine
+    D["indexFile() + resolveProjectRefs()"]:::engine
+    E[("SQLite\nDB 동기화 완료")]:::storage
+
+    A --> B --> C --> D --> E
+
+    classDef mcp fill:#06b6d4,stroke:#22d3ee,color:#f8fafc
+    classDef engine fill:#8b5cf6,stroke:#a78bfa,color:#f8fafc
+    classDef storage fill:#10b981,stroke:#34d399,color:#f8fafc
+```
 
 ---
 

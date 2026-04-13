@@ -2,6 +2,25 @@
 
 **5분 안에 Java 프로젝트를 AI가 탐색 가능한 코드 인덱스로 만드세요.**
 
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#3b82f6', 'primaryTextColor': '#f8fafc', 'primaryBorderColor': '#60a5fa', 'lineColor': '#94a3b8', 'secondaryColor': '#1e293b', 'tertiaryColor': '#0f172a'}}}%%
+flowchart LR
+    S1["① 설치 & 빌드\nnpm install\nnpm run build"]:::cli
+    S2["② 프로젝트 인덱싱\ncodeatlas index /path"]:::engine
+    S3["③ CLI 검색 확인\ncodeatlas search ..."]:::cli
+    S4["④ MCP 등록\n~/.mcp.json 수정"]:::mcp
+    S5["⑤ Claude와 연동\nMCP 도구 호출"]:::mcp
+    S6["⑥ 선택: 임베딩\ncodeatlas embed\n시맨틱 검색 활성화"]:::storage
+
+    S1 --> S2 --> S3 --> S4 --> S5
+    S5 -.->|"선택 사항"| S6
+
+    classDef cli fill:#3b82f6,stroke:#60a5fa,color:#f8fafc
+    classDef engine fill:#8b5cf6,stroke:#a78bfa,color:#f8fafc
+    classDef mcp fill:#06b6d4,stroke:#22d3ee,color:#f8fafc
+    classDef storage fill:#10b981,stroke:#34d399,color:#f8fafc
+```
+
 ---
 
 ## 전제 조건
