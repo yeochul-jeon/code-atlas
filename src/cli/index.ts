@@ -170,6 +170,40 @@ program
     console.log(`\nRestart the MCP server to make semantic_search available.`);
   });
 
+// ─── graph ────────────────────────────────────────────────────────────────────
+
+const graphCmd = program
+  .command('graph')
+  .description('Kuzu graph database operations');
+
+graphCmd
+  .command('build <project>')
+  .description('Build the Kuzu graph from the indexed symbols and references')
+  .option('-v, --verbose', 'Show detailed progress', false)
+  .action(async (project: string, opts: { verbose: boolean }) => {
+    const db = getDb();
+    const projects = listProjects(db);
+    const p = projects.find(x => x.name === project || x.root_path === resolve(project));
+    if (!p) {
+      console.error(`Project not found: "${project}". Use: codeatlas list`);
+      process.exit(1);
+    }
+
+    const { GraphStore } = await import('../graph/graph-store.js');
+    const { buildGraph } = await import('../graph/graph-pipeline.js');
+
+    const graphPath = join(dirname(DB_PATH), 'graph.kuzu');
+    const graphStore = await GraphStore.open(graphPath);
+
+    console.log(`Building graph for "${p.name}"...`);
+    const result = await buildGraph(db, p.id, graphStore, { verbose: opts.verbose });
+
+    console.log(`\nDone in ${result.durationMs}ms`);
+    console.log(`  nodes : ${result.nodes}`);
+    console.log(`  edges : ${result.edges}`);
+    console.log(`\nRestart the MCP server to make graph tools available.`);
+  });
+
 // ─── dead-code ────────────────────────────────────────────────────────────────
 
 program

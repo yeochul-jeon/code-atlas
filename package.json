@@ -24,10 +24,11 @@
     "apache-arrow": "^18.1.0",
     "better-sqlite3": "^11.9.1",
     "commander": "^13.1.0",
+    "kuzu": "^0.11.3",
+    "picomatch": "^4.0.4",
     "tree-sitter": "^0.21.1",
     "tree-sitter-java": "^0.23.5",
     "tree-sitter-kotlin": "^0.3.8",
-    "picomatch": "^4.0.4",
     "yaml": "^2.7.1"
   },
   "devDependencies": {

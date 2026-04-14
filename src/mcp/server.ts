@@ -26,6 +26,7 @@ import { loadConfig } from '../config/loader.js';
 import { Embedder } from '../vectors/embedder.js';
 import { VectorStore } from '../vectors/vector-store.js';
 import { handleSemanticSearch } from '../vectors/semantic-search.js';
+import { GraphStore } from '../graph/graph-store.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -85,6 +86,20 @@ export async function startMcpServer(dbPath: string, _httpPort?: number, modelOv
     try {
       vectorStore = await VectorStore.open(vectorsPath);
       return vectorStore;
+    } catch {
+      return null;
+    }
+  }
+
+  // Graph search — lazy-init; null if `codeatlas graph build` has not been run
+  let graphStore: GraphStore | null = null;
+  const graphPath = join(dirname(dbPath), 'graph.kuzu');
+
+  async function getGraphStore(): Promise<GraphStore | null> {
+    if (graphStore) return graphStore;
+    try {
+      graphStore = await GraphStore.open(graphPath);
+      return graphStore;
     } catch {
       return null;
     }
@@ -544,6 +559,105 @@ export async function startMcpServer(dbPath: string, _httpPort?: number, modelOv
       );
       return { content: [{ type: 'text', text }] };
     }
+  );
+
+  // ── Graph tools (Phase 6) ────────────────────────────────────────────────────
+
+  // 18. get_impact_analysis
+  server.tool(
+    'get_impact_analysis',
+    'Find all symbols that directly or transitively call/reference a given symbol. ' +
+    'Use this to assess the impact of changing a class or method. ' +
+    'Requires graph to be built first (run `codeatlas graph build <project>`).',
+    {
+      symbol: z.string().describe('Symbol name to analyse (class, method, or field name)'),
+      project: z.string().describe('Project name (from list_projects)'),
+      depth: z.number().int().min(1).max(6).default(3)
+        .describe('Max traversal depth (1–6, default 3)'),
+    },
+    async ({ symbol, project, depth }) => {
+      const store = await getGraphStore();
+      if (!store) {
+        return {
+          content: [{
+            type: 'text',
+            text: 'Graph not built. Run: codeatlas graph build <project>',
+          }],
+        };
+      }
+
+      const proj = resolveProjectByName(project);
+      if (!proj) {
+        return { content: [{ type: 'text', text: `Project not found: ${project}` }] };
+      }
+
+      const results = await store.queryImpact(symbol, proj.id, depth);
+
+      if (results.length === 0) {
+        return {
+          content: [{
+            type: 'text',
+            text: `No callers found for '${symbol}' within depth ${depth}.`,
+          }],
+        };
+      }
+
+      const lines = [
+        `Impact analysis for '${symbol}' (depth ≤ ${depth}) — ${results.length} caller(s):`,
+        '',
+        ...results.map(r =>
+          `[${r.kind}] ${r.name}\n  ${r.filePath}:${r.startLine}`,
+        ),
+      ];
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    },
+  );
+
+  // 19. find_circular_deps
+  server.tool(
+    'find_circular_deps',
+    'Detect classes or interfaces that form inheritance cycles via extends/implements. ' +
+    'Returns all symbols involved in a cycle. ' +
+    'Requires graph to be built first (run `codeatlas graph build <project>`).',
+    {
+      project: z.string().describe('Project name (from list_projects)'),
+      edge_kind: z.enum(['extends', 'implements', 'all']).default('all')
+        .describe('Which inheritance edge type to check'),
+    },
+    async ({ project, edge_kind }) => {
+      const store = await getGraphStore();
+      if (!store) {
+        return {
+          content: [{
+            type: 'text',
+            text: 'Graph not built. Run: codeatlas graph build <project>',
+          }],
+        };
+      }
+
+      const proj = resolveProjectByName(project);
+      if (!proj) {
+        return { content: [{ type: 'text', text: `Project not found: ${project}` }] };
+      }
+
+      const results = await store.queryCircularDeps(proj.id, edge_kind);
+
+      if (results.length === 0) {
+        return {
+          content: [{
+            type: 'text',
+            text: `No circular ${edge_kind === 'all' ? 'extends/implements' : edge_kind} dependencies found in '${project}'.`,
+          }],
+        };
+      }
+
+      const lines = [
+        `Circular inheritance detected in '${project}' — ${results.length} symbol(s) involved:`,
+        '',
+        ...results.map(r => `[${r.kind}] ${r.name}\n  ${r.filePath}`),
+      ];
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    },
   );
 
   // ── Start transport ──────────────────────────────────────────────────────────
