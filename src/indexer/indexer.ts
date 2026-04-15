@@ -17,6 +17,7 @@ import {
 import { parseFile, detectLanguage } from './tree-sitter/parser.js';
 import { extractFromJava } from './tree-sitter/java-extractor.js';
 import { extractFromJS } from './tree-sitter/js-extractor.js';
+import { extractFromVue } from './tree-sitter/vue-extractor.js';
 
 export interface IndexOptions {
   incremental?: boolean;
@@ -39,7 +40,7 @@ export interface IndexResult {
 
 // Default supported extensions — overridable via IndexOptions.extensions.
 // Note: .d.ts files are collected (extension .ts) but skipped in detectLanguage.
-const DEFAULT_EXTENSIONS = ['.java', '.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx'];
+const DEFAULT_EXTENSIONS = ['.java', '.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx', '.vue'];
 
 function collectFiles(dir: string, extensions?: string[], skipDirs?: string[]): string[] {
   const result: string[] = [];
@@ -98,14 +99,17 @@ function indexFile(db: Db, projectId: number, absolutePath: string, relativePath
   if (!lang) return;
 
   const tree = parseFile(absolutePath, source);
-  if (!tree) return;
+  // Vue SFC: parseFile returns null (no outer tree-sitter parse); extraction handled below.
+  if (!tree && lang !== 'vue') return;
 
   try {
     let extraction;
     if (lang === 'java') {
-      extraction = extractFromJava(tree);
+      extraction = extractFromJava(tree!);
     } else if (lang === 'javascript' || lang === 'typescript' || lang === 'tsx') {
-      extraction = extractFromJS(tree, lang);
+      extraction = extractFromJS(tree!, lang);
+    } else if (lang === 'vue') {
+      extraction = extractFromVue(source);
     } else {
       return;
     }
@@ -159,7 +163,8 @@ function indexFile(db: Db, projectId: number, absolutePath: string, relativePath
     }
   } finally {
     // tree-sitter Tree는 V8 GC와 별개의 native heap 사용 — 명시 해제로 native 메모리 즉시 반환
-    (tree as unknown as { delete?: () => void }).delete?.();
+    // tree is null for Vue files; guard before property access to avoid TypeError.
+    if (tree) (tree as unknown as { delete?: () => void }).delete?.();
   }
 }
 

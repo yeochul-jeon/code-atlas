@@ -414,3 +414,62 @@ describe('indexProject — JS/TS indexing', () => {
     expect(result.errors).toBe(0);
   });
 });
+
+// ─── Vue SFC indexing ─────────────────────────────────────────────────────────
+
+const SIMPLE_VUE_TS = [
+  '<template>',
+  '  <div>{{ msg }}</div>',
+  '</template>',
+  '<script lang="ts">',
+  "import { ref } from 'vue';",
+  'export function useGreet() { return ref("hi"); }',
+  '</script>',
+].join('\n');
+
+const SIMPLE_VUE_JS = [
+  '<script>',
+  'export default { name: "MyComponent" };',
+  '</script>',
+].join('\n');
+
+describe('indexProject — Vue SFC indexing', () => {
+  it('indexes a .vue file without errors', () => {
+    writeFileSync(join(tmpDir, 'App.vue'), SIMPLE_VUE_TS);
+    const result = indexProject(db, tmpDir, 'proj');
+    expect(result.indexed).toBe(1);
+    expect(result.errors).toBe(0);
+  });
+
+  it('extracts symbols from <script lang="ts"> block', () => {
+    writeFileSync(join(tmpDir, 'App.vue'), SIMPLE_VUE_TS);
+    const result = indexProject(db, tmpDir, 'proj');
+    const files = listProjectFiles(db, result.project.id);
+    const symbols = getSymbolsByFile(db, files[0].id);
+    const names = symbols.map(s => s.name);
+    expect(names).toContain('useGreet');
+  });
+
+  it('extracts import dependency from <script> block', () => {
+    writeFileSync(join(tmpDir, 'App.vue'), SIMPLE_VUE_TS);
+    const result = indexProject(db, tmpDir, 'proj');
+    const files = listProjectFiles(db, result.project.id);
+    const deps = getDependenciesByFile(db, files[0].id);
+    expect(deps.some(d => d.target_fqn === 'vue')).toBe(true);
+  });
+
+  it('indexes a plain <script> (no lang) .vue file', () => {
+    writeFileSync(join(tmpDir, 'Plain.vue'), SIMPLE_VUE_JS);
+    const result = indexProject(db, tmpDir, 'proj');
+    expect(result.indexed).toBe(1);
+    expect(result.errors).toBe(0);
+  });
+
+  it('indexes mixed project: .ts + .vue', () => {
+    writeFileSync(join(tmpDir, 'Button.ts'), SIMPLE_TS);
+    writeFileSync(join(tmpDir, 'App.vue'), SIMPLE_VUE_TS);
+    const result = indexProject(db, tmpDir, 'proj');
+    expect(result.indexed).toBe(2);
+    expect(result.errors).toBe(0);
+  });
+});

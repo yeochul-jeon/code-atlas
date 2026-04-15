@@ -6,7 +6,7 @@ import JS from 'tree-sitter-javascript';
 // @ts-ignore — no official type declarations for tree-sitter-typescript
 import TS from 'tree-sitter-typescript';
 
-export type SupportedLanguage = 'java' | 'javascript' | 'typescript' | 'tsx';
+export type SupportedLanguage = 'java' | 'javascript' | 'typescript' | 'tsx' | 'vue';
 
 let javaParser: Parser | null = null;
 let jsParser: Parser | null = null;
@@ -39,6 +39,7 @@ export function getParser(language: SupportedLanguage): Parser {
 export function detectLanguage(filePath: string): SupportedLanguage | null {
   const p = filePath.toLowerCase();
   if (p.endsWith('.java')) return 'java';
+  if (p.endsWith('.vue')) return 'vue';
   // .d.ts — declaration-only files have no bodies; skip to avoid noisy ref-less symbols.
   if (p.endsWith('.d.ts')) return null;
   if (p.endsWith('.tsx')) return 'tsx';
@@ -55,6 +56,8 @@ const CHUNK_SIZE = 4096;
 export function parseFile(filePath: string, source: string): Parser.Tree | null {
   const lang = detectLanguage(filePath);
   if (!lang) return null;
+  // Vue SFC outer structure is not parsed with tree-sitter; handled by vue-extractor instead.
+  if (lang === 'vue') return null;
 
   // Strip UTF-8 BOM and normalize CRLF/CR → LF before feeding tree-sitter native binding.
   const normalized = source

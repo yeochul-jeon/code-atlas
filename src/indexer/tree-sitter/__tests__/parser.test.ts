@@ -7,6 +7,12 @@ describe('detectLanguage', () => {
     expect(detectLanguage('/path/to/Bar.java')).toBe('java');
   });
 
+  it('detects .vue as vue', () => {
+    expect(detectLanguage('App.vue')).toBe('vue');
+    expect(detectLanguage('MyComponent.vue')).toBe('vue');
+    expect(detectLanguage('/path/to/Page.vue')).toBe('vue');
+  });
+
   it('returns null for .kt (Kotlin not yet enabled)', () => {
     expect(detectLanguage('Foo.kt')).toBeNull();
   });
