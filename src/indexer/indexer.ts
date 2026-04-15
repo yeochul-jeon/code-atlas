@@ -16,6 +16,7 @@ import {
 } from '../storage/queries.js';
 import { parseFile, detectLanguage } from './tree-sitter/parser.js';
 import { extractFromJava } from './tree-sitter/java-extractor.js';
+import { extractFromJS } from './tree-sitter/js-extractor.js';
 
 export interface IndexOptions {
   incremental?: boolean;
@@ -36,10 +37,13 @@ export interface IndexResult {
 
 // ─── File collection ──────────────────────────────────────────────────────────
 
-// Default: ['.java'] — overridable via IndexOptions.extensions
+// Default supported extensions — overridable via IndexOptions.extensions.
+// Note: .d.ts files are collected (extension .ts) but skipped in detectLanguage.
+const DEFAULT_EXTENSIONS = ['.java', '.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx'];
+
 function collectFiles(dir: string, extensions?: string[], skipDirs?: string[]): string[] {
   const result: string[] = [];
-  const supportedExts = new Set(extensions ?? ['.java']);
+  const supportedExts = new Set(extensions ?? DEFAULT_EXTENSIONS);
   // Directories skipped everywhere (tooling / hidden)
   const ALWAYS_SKIP = new Set(skipDirs ?? ['node_modules', 'build', 'target', '.gradle']);
   // Directories skipped only at the project root (IDE / Gradle build outputs).
@@ -100,9 +104,12 @@ function indexFile(db: Db, projectId: number, absolutePath: string, relativePath
     let extraction;
     if (lang === 'java') {
       extraction = extractFromJava(tree);
+    } else if (lang === 'javascript' || lang === 'typescript' || lang === 'tsx') {
+      extraction = extractFromJS(tree, lang);
     } else {
       return;
     }
+    if (!extraction) return;
 
     // Insert symbols (track local id → DB id for parent references)
     const idMap = new Map<number, number>();

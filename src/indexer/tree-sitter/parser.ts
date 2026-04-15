@@ -1,29 +1,49 @@
 import Parser from 'tree-sitter';
 // @ts-ignore — no official type declarations for tree-sitter-java
 import Java from 'tree-sitter-java';
+// @ts-ignore — no official type declarations for tree-sitter-javascript
+import JS from 'tree-sitter-javascript';
+// @ts-ignore — no official type declarations for tree-sitter-typescript
+import TS from 'tree-sitter-typescript';
 
-export type SupportedLanguage = 'java';
+export type SupportedLanguage = 'java' | 'javascript' | 'typescript' | 'tsx';
 
 let javaParser: Parser | null = null;
+let jsParser: Parser | null = null;
+let tsParser: Parser | null = null;
+let tsxParser: Parser | null = null;
 
 export function getParser(language: SupportedLanguage): Parser {
-  if (language === 'java') {
-    if (!javaParser) {
-      javaParser = new Parser();
-      javaParser.setLanguage(Java);
+  switch (language) {
+    case 'java': {
+      if (!javaParser) { javaParser = new Parser(); javaParser.setLanguage(Java); }
+      return javaParser;
     }
-    return javaParser;
+    case 'javascript': {
+      if (!jsParser) { jsParser = new Parser(); jsParser.setLanguage(JS); }
+      return jsParser;
+    }
+    case 'typescript': {
+      if (!tsParser) { tsParser = new Parser(); tsParser.setLanguage(TS.typescript); }
+      return tsParser;
+    }
+    case 'tsx': {
+      if (!tsxParser) { tsxParser = new Parser(); tsxParser.setLanguage(TS.tsx); }
+      return tsxParser;
+    }
+    default:
+      throw new Error(`Language not supported: ${language}`);
   }
-  throw new Error(`Language not supported: ${language}`);
 }
 
 export function detectLanguage(filePath: string): SupportedLanguage | null {
-  if (filePath.endsWith('.java')) return 'java';
-  // Kotlin support is not yet enabled. To add it:
-  //   1. Import tree-sitter-kotlin
-  //   2. Add 'kotlin' to SupportedLanguage
-  //   3. Initialize kotlin parser here
-  //   4. Uncomment kotlin-extractor.ts usage in indexer.ts
+  const p = filePath.toLowerCase();
+  if (p.endsWith('.java')) return 'java';
+  // .d.ts — declaration-only files have no bodies; skip to avoid noisy ref-less symbols.
+  if (p.endsWith('.d.ts')) return null;
+  if (p.endsWith('.tsx')) return 'tsx';
+  if (/\.(ts|mts|cts)$/.test(p)) return 'typescript';
+  if (/\.(js|mjs|cjs|jsx)$/.test(p)) return 'javascript';
   return null;
 }
 

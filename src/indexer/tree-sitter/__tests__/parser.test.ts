@@ -13,8 +13,62 @@ describe('detectLanguage', () => {
 
   it('returns null for unknown extensions', () => {
     expect(detectLanguage('script.py')).toBeNull();
-    expect(detectLanguage('app.ts')).toBeNull();
     expect(detectLanguage('Makefile')).toBeNull();
+  });
+
+  it('detects .ts as typescript', () => {
+    expect(detectLanguage('app.ts')).toBe('typescript');
+    expect(detectLanguage('mod.mts')).toBe('typescript');
+    expect(detectLanguage('mod.cts')).toBe('typescript');
+  });
+
+  it('detects .tsx as tsx', () => {
+    expect(detectLanguage('App.tsx')).toBe('tsx');
+  });
+
+  it('detects .js / .mjs / .cjs / .jsx as javascript', () => {
+    expect(detectLanguage('index.js')).toBe('javascript');
+    expect(detectLanguage('module.mjs')).toBe('javascript');
+    expect(detectLanguage('module.cjs')).toBe('javascript');
+    expect(detectLanguage('Component.jsx')).toBe('javascript');
+  });
+
+  it('returns null for .d.ts declaration files', () => {
+    expect(detectLanguage('types.d.ts')).toBeNull();
+    expect(detectLanguage('index.d.ts')).toBeNull();
+  });
+
+  it('getParser returns singleton for javascript, typescript, tsx', () => {
+    expect(getParser('javascript')).toBe(getParser('javascript'));
+    expect(getParser('typescript')).toBe(getParser('typescript'));
+    expect(getParser('tsx')).toBe(getParser('tsx'));
+  });
+
+  it('parseFile parses a .ts file', () => {
+    const tree = parseFile('Greet.ts', 'export function greet() {}');
+    expect(tree).not.toBeNull();
+    expect(tree?.rootNode.type).toBe('program');
+  });
+
+  it('parseFile parses a .tsx file', () => {
+    const tree = parseFile('App.tsx', 'export const App = () => <div />;');
+    expect(tree).not.toBeNull();
+    expect(tree?.rootNode.type).toBe('program');
+  });
+
+  it('parseFile parses a .js file', () => {
+    const tree = parseFile('index.js', 'function hello() {}');
+    expect(tree).not.toBeNull();
+    expect(tree?.rootNode.type).toBe('program');
+  });
+
+  it('parses a .ts file exceeding 32,767 chars (streaming callback path)', () => {
+    const padding = '// line\n'.repeat(4200); // ~33,600 chars
+    const largeTs = `export function large() {\n${padding}}\n`;
+    expect(largeTs.length).toBeGreaterThan(32767);
+    const tree = parseFile('Large.ts', largeTs);
+    expect(tree).not.toBeNull();
+    expect(tree?.rootNode.type).toBe('program');
   });
 });
 

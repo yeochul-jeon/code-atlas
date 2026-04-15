@@ -294,3 +294,123 @@ describe('indexProject — CRLF and BOM encoding', () => {
     expect(symbols.map(s => s.name)).toContain('Large');
   });
 });
+
+// ─── JS/TS indexing ───────────────────────────────────────────────────────────
+
+const SIMPLE_TS = `
+import { EventEmitter } from 'events';
+
+export interface Widget {
+  id: number;
+  render(): void;
+}
+
+export class Button implements Widget {
+  id: number;
+  label: string;
+
+  constructor(id: number, label: string) {
+    this.id = id;
+    this.label = label;
+  }
+
+  render() {
+    this.formatLabel();
+  }
+
+  private formatLabel() {}
+}
+
+export const createButton = (id: number, label: string): Button => new Button(id, label);
+`.trim();
+
+const SIMPLE_JS = `
+const util = require('./util');
+
+class Logger {
+  log(msg) { util.write(msg); }
+}
+
+module.exports = { Logger };
+`.trim();
+
+describe('indexProject — JS/TS indexing', () => {
+  it('indexes a .ts file', () => {
+    writeFileSync(join(tmpDir, 'Button.ts'), SIMPLE_TS);
+    const result = indexProject(db, tmpDir, 'proj');
+    expect(result.indexed).toBe(1);
+    expect(result.errors).toBe(0);
+    const files = listProjectFiles(db, result.project.id);
+    const symbols = getSymbolsByFile(db, files[0].id);
+    const names = symbols.map(s => s.name);
+    expect(names).toContain('Widget');
+    expect(names).toContain('Button');
+    expect(names).toContain('createButton');
+  });
+
+  it('extracts parent-child symbol hierarchy from .ts', () => {
+    writeFileSync(join(tmpDir, 'Button.ts'), SIMPLE_TS);
+    const result = indexProject(db, tmpDir, 'proj');
+    const files = listProjectFiles(db, result.project.id);
+    const symbols = getSymbolsByFile(db, files[0].id);
+    const cls = symbols.find(s => s.name === 'Button');
+    const ctor = symbols.find(s => s.name === 'constructor');
+    expect(cls).toBeDefined();
+    expect(ctor?.parent_id).toBe(cls?.id);
+  });
+
+  it('extracts ESM import as dependency from .ts', () => {
+    writeFileSync(join(tmpDir, 'Button.ts'), SIMPLE_TS);
+    const result = indexProject(db, tmpDir, 'proj');
+    const files = listProjectFiles(db, result.project.id);
+    const deps = getDependenciesByFile(db, files[0].id);
+    expect(deps.some(d => d.target_fqn === 'events' && d.kind === 'import')).toBe(true);
+  });
+
+  it('extracts implements as dependency from .ts', () => {
+    writeFileSync(join(tmpDir, 'Button.ts'), SIMPLE_TS);
+    const result = indexProject(db, tmpDir, 'proj');
+    const files = listProjectFiles(db, result.project.id);
+    const deps = getDependenciesByFile(db, files[0].id);
+    expect(deps.some(d => d.target_fqn === 'Widget' && d.kind === 'implements')).toBe(true);
+  });
+
+  it('indexes a .js file with CommonJS require', () => {
+    writeFileSync(join(tmpDir, 'logger.js'), SIMPLE_JS);
+    const result = indexProject(db, tmpDir, 'proj');
+    expect(result.indexed).toBe(1);
+    expect(result.errors).toBe(0);
+    const files = listProjectFiles(db, result.project.id);
+    const symbols = getSymbolsByFile(db, files[0].id);
+    expect(symbols.some(s => s.name === 'Logger')).toBe(true);
+  });
+
+  it('extracts CommonJS require as import dependency', () => {
+    writeFileSync(join(tmpDir, 'logger.js'), SIMPLE_JS);
+    const result = indexProject(db, tmpDir, 'proj');
+    const files = listProjectFiles(db, result.project.id);
+    const deps = getDependenciesByFile(db, files[0].id);
+    expect(deps.some(d => d.target_fqn === './util' && d.kind === 'import')).toBe(true);
+  });
+
+  it('indexes a mixed .ts + .js project', () => {
+    writeFileSync(join(tmpDir, 'Button.ts'), SIMPLE_TS);
+    writeFileSync(join(tmpDir, 'logger.js'), SIMPLE_JS);
+    const result = indexProject(db, tmpDir, 'proj');
+    expect(result.indexed).toBe(2);
+    expect(result.errors).toBe(0);
+  });
+
+  it('extracts no symbols from .d.ts declaration files', () => {
+    writeFileSync(join(tmpDir, 'types.d.ts'), 'export type ID = string;');
+    const result = indexProject(db, tmpDir, 'proj');
+    // .d.ts files are collected (extension .ts) and counted in `indexed`,
+    // but detectLanguage returns null so no symbols are extracted.
+    const files = listProjectFiles(db, result.project.id);
+    if (files.length > 0) {
+      const symbols = getSymbolsByFile(db, files[0].id);
+      expect(symbols).toHaveLength(0);
+    }
+    expect(result.errors).toBe(0);
+  });
+});
