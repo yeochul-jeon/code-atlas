@@ -8,7 +8,7 @@ flowchart LR
     S1["① 설치 & 빌드\nnpm install\nnpm run build"]:::cli
     S2["② 프로젝트 인덱싱\ncodeatlas index /path"]:::engine
     S3["③ CLI 검색 확인\ncodeatlas search ..."]:::cli
-    S4["④ MCP 등록\n~/.mcp.json 수정"]:::mcp
+    S4["④ MCP 등록\n.mcp.json 생성 (프로젝트 루트)"]:::mcp
     S5["⑤ Claude와 연동\nMCP 도구 호출"]:::mcp
     S6["⑥ 선택: 임베딩\ncodeatlas embed\n시맨틱 검색 활성화"]:::storage
 
@@ -108,20 +108,24 @@ codeatlas search Repository --kind class
 
 ## Step 4 — Claude Code MCP 연동
 
-`~/.mcp.json` 파일을 생성 (또는 기존에 항목 추가):
+**codeatlas 프로젝트 루트**에 `.mcp.json` 파일을 생성합니다:
 
 ```json
 {
   "mcpServers": {
     "codeatlas": {
       "command": "node",
-      "args": ["/absolute/path/to/codeatlas/dist/cli/index.js", "serve"]
+      "args": ["./dist/cli/index.js", "serve"]
     }
   }
 }
 ```
 
-> `npm link` 를 했다면 `"command": "codeatlas", "args": ["serve"]` 로 단순화 가능
+> **상대경로 권장** — `.mcp.json` 위치 기준으로 해석되므로 다른 머신에서도 수정 없이 동작합니다.
+>
+> **`~/.mcp.json` 사용 비권장** — 홈 디렉토리에 두면 모든 하위 프로젝트 세션에 자동 주입되어 불필요하게 도구가 로드됩니다.
+
+이 파일은 **팀 공유 목적으로 커밋**하는 것을 권장합니다.
 
 Claude Code를 재시작하면 **24개 코드 탐색·편집·메모리 도구**가 활성화됩니다.
 

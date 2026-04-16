@@ -354,18 +354,20 @@ codeatlas serve --port 3000
 
 ### Claude Code 연동
 
-`~/.mcp.json`:
+**codeatlas 프로젝트 루트**에 `.mcp.json` 생성 (커밋 권장):
 
 ```json
 {
   "mcpServers": {
     "codeatlas": {
       "command": "node",
-      "args": ["/absolute/path/to/codeatlas/dist/cli/index.js", "serve"]
+      "args": ["./dist/cli/index.js", "serve"]
     }
   }
 }
 ```
+
+> **`~/.mcp.json` 사용 비권장** — 홈 디렉토리에 두면 모든 하위 프로젝트 세션에 자동 주입됩니다. 프로젝트 루트에 두면 해당 프로젝트 세션에서만 활성화됩니다.
 
 Claude Code 재시작 후 `/mcp` 명령으로 서버 상태 확인:
 
