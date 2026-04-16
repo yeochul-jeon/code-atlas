@@ -15,7 +15,6 @@ import {
 import { deadCodeAction } from './dead-code.js';
 import { loadConfig } from '../config/loader.js';
 import {
-  slugify,
   listMemories,
   readMemory,
   deleteMemory,
@@ -245,25 +244,24 @@ graphCmd
 // ─── memories ─────────────────────────────────────────────────────────────────
 
 const memoriesCmd = program
-  .command('memories <project>')
+  .command('memories')
   .description('Manage project knowledge memories (.codeatlas/memories/)');
 
 memoriesCmd
-  .command('list')
-  .description('List all memory files for the project')
+  .command('list <project>')
+  .description('List all memory files for a project')
   .option('-t, --tag <tag>', 'Filter by tag')
-  .action((opts: { tag?: string }, cmd) => {
-    const projectArg = cmd.parent?.args[0] as string;
+  .action((project: string, opts: { tag?: string }) => {
     const db = getDb();
     const projects = listProjects(db);
-    const p = projects.find(x => x.name === projectArg || x.root_path === resolve(projectArg));
+    const p = projects.find(x => x.name === project || x.root_path === resolve(project));
     if (!p) {
-      console.error(`Project not found: "${projectArg}". Use: codeatlas list`);
+      console.error(`Project not found: "${project}". Use: codeatlas list`);
       process.exit(1);
     }
     const mems = listMemories(p.root_path, opts.tag);
     if (mems.length === 0) {
-      console.log('No memories found.');
+      console.log('No memories found. Use MCP write_memory tool or `codeatlas memories onboard <project>`.');
       return;
     }
     for (const m of mems) {
@@ -274,15 +272,14 @@ memoriesCmd
   });
 
 memoriesCmd
-  .command('read <slug>')
+  .command('read <project> <slug>')
   .description('Print the content of a memory file')
-  .action((slug: string, _opts, cmd) => {
-    const projectArg = cmd.parent?.parent?.args[0] as string;
+  .action((project: string, slug: string) => {
     const db = getDb();
     const projects = listProjects(db);
-    const p = projects.find(x => x.name === projectArg || x.root_path === resolve(projectArg));
+    const p = projects.find(x => x.name === project || x.root_path === resolve(project));
     if (!p) {
-      console.error(`Project not found: "${projectArg}". Use: codeatlas list`);
+      console.error(`Project not found: "${project}". Use: codeatlas list`);
       process.exit(1);
     }
     const mem = readMemory(p.root_path, slug);
@@ -297,15 +294,14 @@ memoriesCmd
   });
 
 memoriesCmd
-  .command('delete <slug>')
+  .command('delete <project> <slug>')
   .description('Delete a memory file')
-  .action((slug: string, _opts, cmd) => {
-    const projectArg = cmd.parent?.parent?.args[0] as string;
+  .action((project: string, slug: string) => {
     const db = getDb();
     const projects = listProjects(db);
-    const p = projects.find(x => x.name === projectArg || x.root_path === resolve(projectArg));
+    const p = projects.find(x => x.name === project || x.root_path === resolve(project));
     if (!p) {
-      console.error(`Project not found: "${projectArg}". Use: codeatlas list`);
+      console.error(`Project not found: "${project}". Use: codeatlas list`);
       process.exit(1);
     }
     const deleted = deleteMemory(p.root_path, slug);
@@ -317,15 +313,14 @@ memoriesCmd
   });
 
 memoriesCmd
-  .command('onboard')
-  .description('Manually trigger AI onboarding memory generation for the project')
-  .action(async (_opts, cmd) => {
-    const projectArg = cmd.parent?.args[0] as string;
+  .command('onboard <project>')
+  .description('Trigger AI onboarding memory generation for a project')
+  .action(async (project: string) => {
     const db = getDb();
     const projects = listProjects(db);
-    const p = projects.find(x => x.name === projectArg || x.root_path === resolve(projectArg));
+    const p = projects.find(x => x.name === project || x.root_path === resolve(project));
     if (!p) {
-      console.error(`Project not found: "${projectArg}". Use: codeatlas list`);
+      console.error(`Project not found: "${project}". Use: codeatlas list`);
       process.exit(1);
     }
     const files = listProjectFiles(db, p.id);
@@ -342,27 +337,6 @@ memoriesCmd
       console.log(`Created: ${result.memoriesCreated.join(', ')}`);
     }
   });
-
-// Default action for `codeatlas memories <project>` (no subcommand) = list
-memoriesCmd.action((project: string) => {
-  const db = getDb();
-  const projects = listProjects(db);
-  const p = projects.find(x => x.name === project || x.root_path === resolve(project));
-  if (!p) {
-    console.error(`Project not found: "${project}". Use: codeatlas list`);
-    process.exit(1);
-  }
-  const mems = listMemories(p.root_path);
-  if (mems.length === 0) {
-    console.log('No memories found. Use MCP write_memory tool or `codeatlas index` with auto-onboarding.');
-    return;
-  }
-  for (const m of mems) {
-    const tags = m.tags.length > 0 ? ` [${m.tags.join(', ')}]` : '';
-    console.log(`${m.slug}${tags}`);
-    console.log(`  "${m.title}" — ${m.updated_at}`);
-  }
-});
 
 // ─── dead-code ────────────────────────────────────────────────────────────────
 
